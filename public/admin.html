@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - Smart Attendance</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <h1>Smart Attendance - Admin</h1>
+  <a href="index.html">Home</a>
+  <button id="logoutBtn" class="small gray" hidden onclick="logout()">Log out</button>
+</header>
+<main>
+
+<!-- FIRST TIME SETUP -->
+<section id="setupBox" hidden>
+  <div class="card">
+    <h2>First time setup: create the admin</h2>
+    <p class="muted">Use the SETUP_CODE you saved in Cloudflare. This page works only one time.</p>
+    <label>Setup code</label><input id="s_code" type="password">
+    <label>Admin username</label><input id="s_user">
+    <label>Admin password (minimum 8 characters)</label><input id="s_pw" type="password" autocomplete="new-password">
+    <div id="setupMsg" class="msg"></div>
+    <button onclick="doSetup()">Create admin</button>
+  </div>
+</section>
+
+<!-- LOGIN -->
+<section id="authBox" hidden>
+  <div class="card">
+    <h2>Admin log in</h2>
+    <label>Username</label><input id="l_user" autocomplete="username">
+    <label>Password</label><input id="l_pw" type="password" autocomplete="current-password">
+    <div id="loginMsg" class="msg"></div>
+    <button onclick="doLogin()">Log in</button>
+  </div>
+</section>
+
+<div id="topMsg" class="msg"></div>
+
+<!-- DASHBOARD -->
+<section id="appBox" hidden>
+  <div class="tabs" id="tabs">
+    <button data-t="uni" class="active">Universities</button>
+    <button data-t="dep">Departments</button>
+    <button data-t="course">Courses</button>
+    <button data-t="lec">Lecturers</button>
+    <button data-t="stu">Students</button>
+  </div>
+
+  <!-- universities -->
+  <div id="p_uni">
+    <div class="card">
+      <h2 id="uniFormTitle">Add university</h2>
+      <input type="hidden" id="u_id">
+      <div class="row">
+        <div><label>University name</label><input id="u_name"></div>
+        <div><label>School motto</label><input id="u_motto" placeholder="Example: Knowledge is power"></div>
+      </div>
+      <label>Logo (image)</label>
+      <input id="u_logo" type="file" accept="image/*" onchange="previewLogo()">
+      <img id="u_prev" class="logo-thumb" style="margin-top:8px" hidden alt="">
+      <div><button onclick="saveUniversity()">Save university</button><button class="gray" onclick="resetUniForm()">Clear</button></div>
+    </div>
+    <div class="card"><h2>Universities</h2>
+      <div class="table-wrap"><table><thead><tr><th>Logo</th><th>Name</th><th>Motto</th><th></th></tr></thead><tbody id="uniBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- departments -->
+  <div id="p_dep" hidden>
+    <div class="card"><h2>Add department</h2>
+      <label>Department name</label><input id="d_name">
+      <button onclick="addDepartment()">Add department</button>
+    </div>
+    <div class="card"><h2>Departments</h2>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th></th></tr></thead><tbody id="depBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- courses -->
+  <div id="p_course" hidden>
+    <div class="card"><h2>Add course</h2>
+      <div class="row">
+        <div><label>University</label><select id="c_uni"></select></div>
+        <div><label>Department (optional)</label><select id="c_dep"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Course code</label><input id="c_code" placeholder="Example: CS101"></div>
+        <div><label>Course name</label><input id="c_name" placeholder="Example: Computer Science"></div>
+      </div>
+      <button onclick="addCourse()">Add course</button>
+    </div>
+    <div class="card"><h2>Courses</h2>
+      <div class="table-wrap"><table><thead><tr><th>Code</th><th>Course</th><th>University</th><th>Department</th><th></th></tr></thead><tbody id="courseBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- lecturers -->
+  <div id="p_lec" hidden>
+    <div class="card"><h2>Add lecturer</h2>
+      <div class="row">
+        <div><label>Lecturer ID (used to log in)</label><input id="le_id"></div>
+        <div><label>Full name</label><input id="le_name"></div>
+      </div>
+      <div class="row">
+        <div><label>University</label><select id="le_uni"></select></div>
+        <div><label>Department (optional)</label><select id="le_dep"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Email (optional)</label><input id="le_email" type="email"></div>
+        <div><label>Password (minimum 6 characters)</label><input id="le_pw" type="password" autocomplete="new-password"></div>
+      </div>
+      <button onclick="addLecturer()">Add lecturer</button>
+    </div>
+    <div class="card" id="assignCard" hidden>
+      <h2 id="assignTitle"></h2>
+      <div id="assignList"></div>
+      <button class="green" onclick="saveAssign()">Save courses</button>
+      <button class="gray" onclick="$('assignCard').hidden = true">Close</button>
+    </div>
+    <div class="card"><h2>Lecturers</h2>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>University</th><th>Courses</th><th></th></tr></thead><tbody id="lecBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- students -->
+  <div id="p_stu" hidden>
+    <div class="card"><h2>Students</h2>
+      <input id="stuSearch" placeholder="Search by name or registration number" oninput="renderStudents()">
+      <div class="table-wrap"><table><thead><tr><th>Reg. number</th><th>Name</th><th>University</th><th>Course</th><th></th></tr></thead><tbody id="stuBody"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script src="common.js"></script>
+<script>
+let unis = [], deps = [], students = [], assignLecturer = null;
+
+(async function init() {
+  try {
+    const me = await api("/api/me");
+    if (me.role !== "admin") throw new Error("no");
+    $("logoutBtn").hidden = false;
+    $("appBox").hidden = false;
+    loadAll();
+  } catch (e) {
+    const st = await api("/api/admin/status").catch(() => ({ has_admin: true }));
+    $(st.has_admin ? "authBox" : "setupBox").hidden = false;
+  }
+})();
+
+async function doSetup() {
+  showMsg("setupMsg", "");
+  try {
+    await api("/api/admin/setup", "POST", { setup_code: $("s_code").value, username: $("s_user").value, password: $("s_pw").value });
+    await api("/api/admin/login", "POST", { username: $("s_user").value, password: $("s_pw").value });
+    location.reload();
+  } catch (e) { showMsg("setupMsg", e.message); }
+}
+async function doLogin() {
+  showMsg("loginMsg", "");
+  try {
+    await api("/api/admin/login", "POST", { username: $("l_user").value, password: $("l_pw").value });
+    location.reload();
+  } catch (e) { showMsg("loginMsg", e.message); }
+}
+
+/* tabs */
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("#tabs button").forEach((x) => (x.className = x === b ? "active" : ""));
+  ["uni", "dep", "course", "lec", "stu"].forEach((t) => ($("p_" + t).hidden = t !== b.dataset.t));
+}));
+
+const fail = (e) => showMsg("topMsg", e.message);
+const ok = (t) => showMsg("topMsg", t, "ok");
+const opts = (list, label, empty) => (empty ? `<option value="">${empty}</option>` : "") + list.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join("");
+
+async function loadAll() {
+  try {
+    [unis, deps] = await Promise.all([api("/api/admin/universities"), api("/api/admin/departments")]);
+    renderUnis(); renderDeps();
+    $("c_uni").innerHTML = opts(unis, (u) => u.name);
+    $("le_uni").innerHTML = opts(unis, (u) => u.name);
+    $("c_dep").innerHTML = opts(deps, (d) => d.department_name, "No department");
+    $("le_dep").innerHTML = opts(deps, (d) => d.department_name, "No department");
+    loadCourses(); loadLecturers(); loadStudents();
+  } catch (e) { fail(e); }
+}
+
+/* ---------- universities ---------- */
+let newLogo = null;
+async function previewLogo() {
+  const f = $("u_logo").files[0];
+  if (!f) return;
+  try {
+    newLogo = await fileToLogo(f, 256);
+    $("u_prev").src = newLogo; $("u_prev").hidden = false;
+  } catch (e) { fail(e); }
+}
+function resetUniForm() {
+  $("u_id").value = ""; $("u_name").value = ""; $("u_motto").value = ""; $("u_logo").value = "";
+  $("u_prev").hidden = true; newLogo = null; $("uniFormTitle").textContent = "Add university";
+}
+function renderUnis() {
+  $("uniBody").innerHTML = unis.map((u) =>
+    `<tr><td>${u.logo_data ? `<img class="logo-thumb" src="${esc(u.logo_data)}" alt="">` : "-"}</td>
+     <td><b>${esc(u.name)}</b></td><td>${esc(u.motto || "")}</td>
+     <td><button class="small" onclick="editUni(${u.id})">Edit</button>
+         <button class="small red" onclick="delItem('universities', ${u.id}, 'Delete this university? Its courses, lecturers and students will also be deleted!')">Delete</button></td></tr>`
+  ).join("") || '<tr><td colspan="4" class="muted">No university yet</td></tr>';
+}
+function editUni(id) {
+  const u = unis.find((x) => x.id === id);
+  $("u_id").value = u.id; $("u_name").value = u.name; $("u_motto").value = u.motto || "";
+  $("u_prev").src = u.logo_data || ""; $("u_prev").hidden = !u.logo_data; newLogo = null;
+  $("uniFormTitle").textContent = "Edit university"; window.scrollTo(0, 0);
+}
+async function saveUniversity() {
+  const body = { name: $("u_name").value, motto: $("u_motto").value };
+  if (newLogo) body.logo_data = newLogo;
+  try {
+    if ($("u_id").value) await api("/api/admin/universities/" + $("u_id").value, "PUT", body);
+    else await api("/api/admin/universities", "POST", body);
+    ok("University saved"); resetUniForm(); loadAll();
+  } catch (e) { fail(e); }
+}
+
+/* ---------- departments ---------- */
+function renderDeps() {
+  $("depBody").innerHTML = deps.map((d) =>
+    `<tr><td>${esc(d.department_name)}</td><td><button class="small red" onclick="delItem('departments', ${d.id}, 'Delete this department?')">Delete</button></td></tr>`
+  ).join("") || '<tr><td colspan="2" class="muted">No department yet</td></tr>';
+}
+async function addDepartment() {
+  try { await api("/api/admin/departments", "POST", { department_name: $("d_name").value }); $("d_name").value = ""; ok("Department added"); loadAll(); }
+  catch (e) { fail(e); }
+}
+
+/* ---------- courses ---------- */
+async function loadCourses() {
+  const list = await api("/api/admin/courses");
+  $("courseBody").innerHTML = list.map((c) =>
+    `<tr><td>${esc(c.course_code)}</td><td>${esc(c.course_name)}</td><td>${esc(c.university)}</td><td>${esc(c.department_name || "-")}</td>
+     <td><button class="small red" onclick="delItem('courses', ${c.id}, 'Delete this course?')">Delete</button></td></tr>`
+  ).join("") || '<tr><td colspan="5" class="muted">No course yet</td></tr>';
+}
+async function addCourse() {
+  try {
+    await api("/api/admin/courses", "POST", { university_id: $("c_uni").value, department_id: $("c_dep").value || null, course_code: $("c_code").value, course_name: $("c_name").value });
+    $("c_code").value = ""; $("c_name").value = ""; ok("Course added"); loadCourses();
+  } catch (e) { fail(e); }
+}
+
+/* ---------- lecturers ---------- */
+async function loadLecturers() {
+  const list = await api("/api/admin/lecturers");
+  $("lecBody").innerHTML = list.map((l) =>
+    `<tr><td>${esc(l.lecturer_id)}</td><td>${esc(l.full_name)}</td><td>${esc(l.university)}</td><td>${esc(l.courses || "-")}</td>
+     <td><button class="small" onclick="openAssign(${l.id}, '${esc(l.full_name).replace(/'/g, "")}')">Courses</button>
+         <button class="small gray" onclick="resetPw('lecturer', ${l.id})">Password</button>
+         <button class="small red" onclick="delItem('lecturers', ${l.id}, 'Delete this lecturer and his/her modules?')">Delete</button></td></tr>`
+  ).join("") || '<tr><td colspan="5" class="muted">No lecturer yet</td></tr>';
+}
+async function addLecturer() {
+  try {
+    await api("/api/admin/lecturers", "POST", { lecturer_id: $("le_id").value, full_name: $("le_name").value, university_id: $("le_uni").value, department_id: $("le_dep").value || null, email: $("le_email").value, password: $("le_pw").value });
+    ["le_id", "le_name", "le_email", "le_pw"].forEach((i) => ($(i).value = ""));
+    ok("Lecturer added. Now click Courses to give him/her courses."); loadLecturers();
+  } catch (e) { fail(e); }
+}
+async function openAssign(id, name) {
+  try {
+    const d = await api("/api/admin/lecturers/" + id + "/courses");
+    assignLecturer = id;
+    $("assignTitle").textContent = "Courses for " + name;
+    $("assignList").innerHTML = d.available.map((c) =>
+      `<label style="font-weight:400"><input type="checkbox" value="${c.id}" ${d.assigned.includes(c.id) ? "checked" : ""}> ${esc(c.course_name)} (${esc(c.course_code)})</label>`
+    ).join("") || '<p class="muted">This university has no course yet. Add courses first.</p>';
+    $("assignCard").hidden = false; window.scrollTo(0, 0);
+  } catch (e) { fail(e); }
+}
+async function saveAssign() {
+  const ids = [...document.querySelectorAll("#assignList input:checked")].map((x) => Number(x.value));
+  try { await api("/api/admin/lecturers/" + assignLecturer + "/courses", "PUT", { course_ids: ids }); $("assignCard").hidden = true; ok("Courses saved"); loadLecturers(); }
+  catch (e) { fail(e); }
+}
+
+/* ---------- students ---------- */
+async function loadStudents() { students = await api("/api/admin/students"); renderStudents(); }
+function renderStudents() {
+  const s = $("stuSearch").value.toLowerCase();
+  $("stuBody").innerHTML = students.filter((x) => (x.full_name + " " + x.reg_number).toLowerCase().includes(s)).map((x) =>
+    `<tr><td>${esc(x.reg_number)}</td><td>${esc(x.full_name)}</td><td>${esc(x.university)}</td><td>${esc(x.course_name || "-")}</td>
+     <td><button class="small gray" onclick="resetPw('student', ${x.id})">Password</button>
+         <button class="small red" onclick="delItem('students', ${x.id}, 'Delete this student and his/her attendance?')">Delete</button></td></tr>`
+  ).join("") || '<tr><td colspan="5" class="muted">No student found</td></tr>';
+}
+
+/* ---------- shared ---------- */
+async function delItem(kind, id, question) {
+  if (!confirm(question)) return;
+  try { await api("/api/admin/" + kind + "/" + id, "DELETE"); ok("Deleted"); loadAll(); } catch (e) { fail(e); }
+}
+async function resetPw(type, id) {
+  const pw = prompt("Type the new password (minimum 6 characters):");
+  if (!pw) return;
+  try { await api("/api/admin/reset-password", "POST", { type, id, password: pw }); ok("Password changed"); } catch (e) { fail(e); }
+}
+</script>
+</body>
+</html>

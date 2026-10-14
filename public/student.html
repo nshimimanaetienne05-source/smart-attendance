@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student - Smart Attendance</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <h1>Smart Attendance - Student</h1>
+  <a href="index.html">Home</a>
+  <button id="logoutBtn" class="small gray" hidden onclick="logout()">Log out</button>
+</header>
+<main>
+
+<!-- LOGIN / REGISTER -->
+<section id="authBox" hidden>
+  <div class="tabs">
+    <button id="tabLogin" class="active" onclick="authTab('login')">Log in</button>
+    <button id="tabReg" onclick="authTab('register')">Register (first time)</button>
+  </div>
+
+  <div class="card" id="loginCard">
+    <h2>Student log in</h2>
+    <label>Registration number</label>
+    <input id="l_reg" autocomplete="username">
+    <label>Password</label>
+    <input id="l_pw" type="password" autocomplete="current-password">
+    <div id="loginMsg" class="msg"></div>
+    <button onclick="doLogin()">Log in</button>
+  </div>
+
+  <div class="card" id="regCard" hidden>
+    <h2>Register (one time only)</h2>
+    <p class="muted">Your name and registration number are saved one time. After this you only log in.</p>
+    <label>University</label>
+    <select id="r_uni" onchange="uniChanged()"><option value="">Choose your university</option></select>
+    <div id="uniPreview" class="uni-preview" hidden><img id="uniLogo" alt=""><div><b id="uniName"></b><div class="muted" id="uniMotto"></div></div></div>
+    <label>Course</label>
+    <select id="r_course"><option value="">Choose your university first</option></select>
+    <label>Full name</label>
+    <input id="r_name" autocomplete="name">
+    <label>Registration number</label>
+    <input id="r_reg">
+    <label>Email (optional)</label>
+    <input id="r_email" type="email" autocomplete="email">
+    <div class="row">
+      <div><label>Password (minimum 6 characters)</label><input id="r_pw" type="password" autocomplete="new-password"></div>
+      <div><label>Repeat password</label><input id="r_pw2" type="password" autocomplete="new-password"></div>
+    </div>
+    <div id="regMsg" class="msg"></div>
+    <button onclick="doRegister()">Create my account</button>
+  </div>
+</section>
+
+<!-- STUDENT AREA -->
+<section id="appBox" hidden>
+  <div class="card">
+    <div class="big" id="welcome"></div>
+    <div class="muted" id="myInfo"></div>
+  </div>
+  <div class="tabs">
+    <button id="tabScan" class="active" onclick="appTab('scan')">Scan attendance</button>
+    <button id="tabHist" onclick="appTab('history')">My attendance</button>
+  </div>
+
+  <div class="card" id="scanCard">
+    <h2>Scan attendance</h2>
+    <p class="muted">1) Turn on your phone location (GPS). 2) Press Start. 3) Scan the QR code shown by your lecturer.</p>
+    <button id="startBtn" onclick="startScan()">Start scanner</button>
+    <button id="stopBtn" class="gray" onclick="stopScan()" hidden>Stop</button>
+    <div id="gpsStatus" class="msg info"></div>
+    <div id="reader"></div>
+    <details>
+      <summary class="muted">Camera not working? Type the code</summary>
+      <label>Code written under the QR</label>
+      <input id="manualCode" placeholder="Example: 1A0A0C36B7633117" autocapitalize="characters">
+      <button class="small" onclick="manualSubmit()">Send code</button>
+    </details>
+    <div id="scanMsg" class="msg"></div>
+  </div>
+
+  <div class="card" id="histCard" hidden>
+    <h2>My attendance</h2>
+    <div id="modSummary"></div>
+    <h3>Records</h3>
+    <div class="table-wrap"><table><thead><tr><th>Lecture date</th><th>Module</th><th>Status</th><th>Distance</th><th>Time</th></tr></thead><tbody id="histBody"></tbody></table></div>
+  </div>
+</section>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="common.js"></script>
+<script>
+let scanner = null, busy = false;
+const tracker = new LocationTracker(updateGps);
+
+/* ---------- start ---------- */
+(async function init() {
+  try {
+    const me = await api("/api/me");
+    if (me.role !== "student") throw new Error("not student");
+    enterApp(me);
+  } catch (e) {
+    $("authBox").hidden = false;
+    loadUniversities();
+  }
+})();
+
+function authTab(t) {
+  $("loginCard").hidden = t !== "login";
+  $("regCard").hidden = t !== "register";
+  $("tabLogin").className = t === "login" ? "active" : "";
+  $("tabReg").className = t === "register" ? "active" : "";
+}
+
+/* ---------- register ---------- */
+async function loadUniversities() {
+  try {
+    const list = await api("/api/universities");
+    $("r_uni").innerHTML = '<option value="">Choose your university</option>' +
+      list.map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
+  } catch (e) { showMsg("regMsg", e.message); }
+}
+async function uniChanged() {
+  const id = $("r_uni").value;
+  $("uniPreview").hidden = true;
+  $("r_course").innerHTML = '<option value="">Choose your university first</option>';
+  if (!id) return;
+  try {
+    const [u, courses] = await Promise.all([api("/api/universities/" + id), api("/api/courses?university_id=" + id)]);
+    $("uniName").textContent = u.name;
+    $("uniMotto").textContent = u.motto ? '"' + u.motto + '"' : "";
+    $("uniLogo").src = u.logo_data || "";
+    $("uniLogo").hidden = !u.logo_data;
+    $("uniPreview").hidden = false;
+    $("r_course").innerHTML = '<option value="">Choose your course</option>' +
+      courses.map((c) => `<option value="${c.id}">${esc(c.course_name)} (${esc(c.course_code)})</option>`).join("");
+  } catch (e) { showMsg("regMsg", e.message); }
+}
+async function doRegister() {
+  showMsg("regMsg", "");
+  if ($("r_pw").value !== $("r_pw2").value) return showMsg("regMsg", "The two passwords are not the same");
+  try {
+    await api("/api/student/register", "POST", {
+      university_id: $("r_uni").value, course_id: $("r_course").value,
+      full_name: $("r_name").value, reg_number: $("r_reg").value,
+      email: $("r_email").value, password: $("r_pw").value,
+    });
+    await api("/api/student/login", "POST", { reg_number: $("r_reg").value, password: $("r_pw").value });
+    location.reload();
+  } catch (e) { showMsg("regMsg", e.message); }
+}
+
+/* ---------- login ---------- */
+async function doLogin() {
+  showMsg("loginMsg", "");
+  try {
+    await api("/api/student/login", "POST", { reg_number: $("l_reg").value, password: $("l_pw").value });
+    location.reload();
+  } catch (e) { showMsg("loginMsg", e.message); }
+}
+
+/* ---------- student area ---------- */
+function enterApp(me) {
+  $("appBox").hidden = false;
+  $("logoutBtn").hidden = false;
+  $("welcome").textContent = "Welcome, " + me.name;
+  $("myInfo").textContent = [me.reg_number, me.course_name, me.university].filter(Boolean).join(" - ");
+  updateGps(tracker);
+}
+function appTab(t) {
+  $("scanCard").hidden = t !== "scan";
+  $("histCard").hidden = t !== "history";
+  $("tabScan").className = t === "scan" ? "active" : "";
+  $("tabHist").className = t === "history" ? "active" : "";
+  if (t === "history") loadHistory();
+}
+async function loadHistory() {
+  try {
+    const d = await api("/api/student/history");
+    $("modSummary").innerHTML = d.modules.length
+      ? d.modules.map((m) => `<div class="stat"><b>${m.percent}%</b><br><span class="muted">${esc(m.module_name)} (${m.present}/${m.held})</span></div>`).join("")
+      : '<p class="muted">No attendance sessions yet.</p>';
+    $("histBody").innerHTML = d.records.map((r) =>
+      `<tr><td>${fmtDate(r.lecture_date)}</td><td>${esc(r.module_name)}</td>
+       <td><span class="badge ${r.attendance_status === "Present" ? "p" : "a"}">${r.attendance_status}</span></td>
+       <td>${r.distance_m} m</td><td>${fmtDateTime(r.scan_time)}</td></tr>`).join("") ||
+      '<tr><td colspan="5" class="muted">No records yet</td></tr>';
+  } catch (e) { showMsg("scanMsg", e.message); }
+}
+
+/* ---------- GPS status line ---------- */
+function updateGps(t) {
+  const el = $("gpsStatus");
+  if (t.error) { el.className = "msg error"; el.textContent = t.error; el.style.display = "block"; return; }
+  if (!t.best) { el.className = "msg info"; el.textContent = scanner ? "Getting your GPS location..." : "GPS is off. It starts when you press Start."; el.style.display = "block"; return; }
+  const a = Math.round(t.best.accuracy);
+  el.className = "msg " + (a <= 50 ? "ok" : "info");
+  el.textContent = "GPS ready. Accuracy about " + a + " m" + (a > 50 ? " (waiting for better signal...)" : "");
+  el.style.display = "block";
+}
+
+/* ---------- scanner ---------- */
+async function startScan() {
+  showMsg("scanMsg", "");
+  busy = false;
+  tracker.best = null;
+  tracker.start();
+  try {
+    scanner = new Html5Qrcode("reader");
+    $("startBtn").hidden = true; $("stopBtn").hidden = false;
+    await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 240, height: 240 } }, onDecoded, () => {});
+  } catch (e) {
+    showMsg("scanMsg", "Cannot open the camera. Allow camera permission, or type the code below.");
+    await stopScan(true);
+  }
+}
+async function stopScan(keepGps) {
+  try { if (scanner) { await scanner.stop(); scanner.clear(); } } catch (e) {}
+  scanner = null;
+  if (!keepGps) tracker.stop();
+  $("startBtn").hidden = false; $("stopBtn").hidden = true;
+}
+async function onDecoded(text) {
+  if (busy) return;
+  busy = true;
+  await stopScan(true);
+  await submitCode(text);
+}
+async function manualSubmit() {
+  const code = $("manualCode").value.trim();
+  if (!code) return showMsg("scanMsg", "Type the code first");
+  if (!tracker.watchId) { tracker.best = null; tracker.start(); }
+  await submitCode(code);
+}
+async function submitCode(code) {
+  showMsg("scanMsg", "Checking your location... please wait (up to 15 seconds)", "info");
+  const pos = await tracker.waitFor(40, 15000);
+  tracker.stop();
+  if (!pos) {
+    busy = false;
+    return showMsg("scanMsg", tracker.error || "Your location was not received. Turn on GPS and scan again.");
+  }
+  try {
+    const r = await api("/api/student/scan", "POST", {
+      qr_code: code, latitude: pos.latitude, longitude: pos.longitude, accuracy: pos.accuracy,
+    });
+    if (r.status === "Present") showMsg("scanMsg", "✔ PRESENT. You are " + r.distance_m + " m from the lecture place. Attendance saved.", "ok");
+    else showMsg("scanMsg", "You are " + r.distance_m + " m away (allowed: " + r.radius_m + " m). You are marked ABSENT.", "error");
+  } catch (e) {
+    showMsg("scanMsg", e.message);
+  }
+  busy = false;
+  updateGps(tracker);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecturer - Smart Attendance</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <h1>Smart Attendance - Lecturer</h1>
+  <span class="who" id="who"></span>
+  <a href="index.html">Home</a>
+  <button id="logoutBtn" class="small gray" hidden onclick="logout()">Log out</button>
+</header>
+<main>
+
+<!-- LOGIN -->
+<section id="authBox" hidden>
+  <div class="card">
+    <h2>Lecturer log in</h2>
+    <label>Lecturer ID</label><input id="l_id" autocomplete="username">
+    <label>Password</label><input id="l_pw" type="password" autocomplete="current-password">
+    <div id="loginMsg" class="msg"></div>
+    <button onclick="doLogin()">Log in</button>
+  </div>
+</section>
+
+<div id="topMsg" class="msg"></div>
+
+<!-- MODULES LIST -->
+<section id="vModules" hidden>
+  <div class="card">
+    <h2>Module setup</h2>
+    <details>
+      <summary><b>+ New module</b></summary>
+      <div class="row">
+        <div><label>Course</label><select id="m_course"></select></div>
+        <div><label>Module name</label><input id="m_name" placeholder="Example: Web Development"></div>
+      </div>
+      <div class="row">
+        <div><label>Start date</label><input id="m_start" type="date"></div>
+        <div><label>End date</label><input id="m_end" type="date"></div>
+      </div>
+      <label>Lecture days</label>
+      <div class="days" id="m_days">
+        <label><input type="checkbox" value="1"> Mon</label><label><input type="checkbox" value="2"> Tue</label>
+        <label><input type="checkbox" value="3"> Wed</label><label><input type="checkbox" value="4"> Thu</label>
+        <label><input type="checkbox" value="5"> Fri</label><label><input type="checkbox" value="6"> Sat</label>
+        <label><input type="checkbox" value="0"> Sun</label>
+      </div>
+      <button onclick="createModule()">Save module</button>
+    </details>
+  </div>
+  <div class="card">
+    <h2>My modules</h2>
+    <div class="table-wrap"><table><thead><tr><th>Module</th><th>Course</th><th>Period</th><th>Lectures</th><th></th></tr></thead><tbody id="modBody"></tbody></table></div>
+  </div>
+</section>
+
+<!-- ONE MODULE: LECTURE DATES -->
+<section id="vDates" hidden>
+  <div class="card">
+    <button class="gray small" onclick="showView('vModules'); loadModules()">← Back</button>
+    <h2 id="dTitle"></h2>
+    <p class="muted" id="dInfo"></p>
+    <button class="green" onclick="downloadPdf(curModule)">Download PDF report</button>
+    <div class="table-wrap"><table><thead><tr><th>Lecture date</th><th>Attendance</th><th>Present / Scanned</th><th></th></tr></thead><tbody id="dBody"></tbody></table></div>
+  </div>
+</section>
+
+<!-- START ATTENDANCE -->
+<section id="vStart" hidden>
+  <div class="card">
+    <button class="gray small" onclick="stopGps(); showView('vDates')">← Back</button>
+    <h2>Start attendance - <span id="sDate"></span></h2>
+    <p class="muted">Stand in the lecture room. Your location becomes the lecture place. The QR code works for 1 hour only.</p>
+    <div id="sGps" class="msg info" style="display:block">Getting your location...</div>
+    <div class="row">
+      <div><label>Allowed distance (meters)</label><input id="sRadius" type="number" min="20" max="500" value="100"></div>
+      <div><label>Room (optional)</label><input id="sRoom" placeholder="Example: Room 12"></div>
+    </div>
+    <div id="sMsg" class="msg"></div>
+    <button id="sBtn" class="green" onclick="createSession()" disabled>Create QR code</button>
+  </div>
+</section>
+
+<!-- SESSION: QR + LIVE LIST -->
+<section id="vSession" hidden>
+  <div class="card">
+    <button class="gray small" onclick="leaveSession()">← Back</button>
+    <h2 id="qTitle"></h2>
+    <div id="qState" class="center big"></div>
+    <div class="qrbox"><div id="qrcode"></div></div>
+    <div class="qrcode-text" id="qCode"></div>
+    <p class="center muted">Students scan this QR code with their phone.</p>
+    <div class="center">
+      <span class="stat"><b id="qPresent">0</b><br><span class="muted">Present</span></span>
+      <span class="stat"><b id="qAbsent">0</b><br><span class="muted">Absent (far)</span></span>
+      <span class="stat"><b id="qEnrolled">0</b><br><span class="muted">Students in course</span></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Live list</h2>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Reg. number</th><th>Status</th><th>Distance</th><th>Time</th></tr></thead><tbody id="qBody"></tbody></table></div>
+    <button class="red small" onclick="deleteSession()">Delete this session</button>
+  </div>
+</section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="common.js"></script>
+<script>
+let curModule = null, curDateId = null, curSession = null, pollTimer = null, tickTimer = null, expiresAt = 0, offset = 0;
+const gps = new LocationTracker(updateGps);
+const VIEWS = ["vModules", "vDates", "vStart", "vSession"];
+
+function showView(id) { VIEWS.forEach((v) => ($(v).hidden = v !== id)); }
+
+(async function init() {
+  try {
+    const me = await api("/api/me");
+    if (me.role !== "lecturer") throw new Error("no");
+    $("who").textContent = me.name + " - " + me.university;
+    $("logoutBtn").hidden = false;
+    const courses = await api("/api/lecturer/courses");
+    $("m_course").innerHTML = courses.length
+      ? courses.map((c) => `<option value="${c.id}">${esc(c.course_name)} (${esc(c.course_code)})</option>`).join("")
+      : '<option value="">No course assigned. Ask the admin.</option>';
+    showView("vModules");
+    loadModules();
+  } catch (e) { $("authBox").hidden = false; }
+})();
+
+async function doLogin() {
+  showMsg("loginMsg", "");
+  try {
+    await api("/api/lecturer/login", "POST", { lecturer_id: $("l_id").value, password: $("l_pw").value });
+    location.reload();
+  } catch (e) { showMsg("loginMsg", e.message); }
+}
+
+/* ---------- modules ---------- */
+async function loadModules() {
+  try {
+    const list = await api("/api/lecturer/modules");
+    $("modBody").innerHTML = list.map((m) =>
+      `<tr><td><b>${esc(m.module_name)}</b></td><td>${esc(m.course_code)}</td>
+       <td>${fmtDate(m.start_date)} - ${fmtDate(m.end_date)}</td><td>${m.held} / ${m.lectures} held</td>
+       <td><button class="small" onclick="openModule(${m.id})">Open</button>
+           <button class="small green" onclick="downloadPdf(${m.id})">PDF</button>
+           <button class="small red" onclick="deleteModule(${m.id})">Delete</button></td></tr>`
+    ).join("") || '<tr><td colspan="5" class="muted">No module yet. Click "+ New module".</td></tr>';
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+async function createModule() {
+  showMsg("topMsg", "");
+  const days = [...document.querySelectorAll("#m_days input:checked")].map((x) => Number(x.value));
+  try {
+    const r = await api("/api/lecturer/modules", "POST", {
+      course_id: $("m_course").value, module_name: $("m_name").value,
+      start_date: $("m_start").value, end_date: $("m_end").value, days,
+    });
+    showMsg("topMsg", "Module saved. " + r.lectures + " lecture dates were made.", "ok");
+    $("m_name").value = "";
+    loadModules();
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+async function deleteModule(id) {
+  if (!confirm("Delete this module and all its attendance records?")) return;
+  try { await api("/api/lecturer/modules/" + id, "DELETE"); loadModules(); } catch (e) { showMsg("topMsg", e.message); }
+}
+
+/* ---------- lecture dates ---------- */
+async function openModule(id) {
+  curModule = id;
+  showMsg("topMsg", "");
+  try {
+    const d = await api("/api/lecturer/modules/" + id + "/dates");
+    offset = d.now - Date.now();
+    $("dTitle").textContent = d.module.module_name;
+    $("dInfo").textContent = d.module.course_name + " - " + d.enrolled + " students registered";
+    $("dBody").innerHTML = d.dates.map((x) => {
+      let state, btn;
+      if (!x.session_id) {
+        state = '<span class="badge g">Not started</span>';
+        btn = `<button class="small green" onclick="startFor(${x.id}, '${x.lecture_date}')">Start attendance</button>`;
+      } else {
+        const open = Date.parse(x.expires_at) > Date.now() + offset;
+        state = open ? '<span class="badge o">Open</span>' : '<span class="badge g">Closed</span>';
+        btn = `<button class="small" onclick="openSession(${x.session_id})">View</button>`;
+      }
+      return `<tr><td>${fmtDate(x.lecture_date)}</td><td>${state}</td><td>${x.session_id ? x.present + " / " + x.scanned : "-"}</td><td>${btn}</td></tr>`;
+    }).join("");
+    showView("vDates");
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+
+/* ---------- start attendance (lecturer GPS) ---------- */
+function startFor(dateId, dateText) {
+  curDateId = dateId;
+  $("sDate").textContent = fmtDate(dateText);
+  showMsg("sMsg", "");
+  $("sBtn").disabled = true;
+  gps.best = null;
+  gps.start();
+  updateGps(gps);
+  showView("vStart");
+}
+function stopGps() { gps.stop(); }
+function updateGps(t) {
+  const el = $("sGps");
+  if (!el) return;
+  if (t.error) { el.className = "msg error"; el.textContent = t.error; $("sBtn").disabled = true; return; }
+  if (!t.best) { el.className = "msg info"; el.textContent = "Getting your location... allow location when the browser asks."; $("sBtn").disabled = true; return; }
+  const a = Math.round(t.best.accuracy);
+  const good = a <= 50;
+  el.className = "msg " + (good ? "ok" : "info");
+  el.textContent = good ? "Location ready. Accuracy about " + a + " m." : "Accuracy about " + a + " m. Wait until it is 50 m or better (go near a window or outside).";
+  $("sBtn").disabled = a > 100;
+}
+async function createSession() {
+  showMsg("sMsg", "");
+  if (!gps.best) return;
+  $("sBtn").disabled = true;
+  try {
+    const r = await api("/api/lecturer/sessions", "POST", {
+      module_date_id: curDateId, latitude: gps.best.latitude, longitude: gps.best.longitude,
+      accuracy: gps.best.accuracy, radius_m: $("sRadius").value, room: $("sRoom").value,
+    });
+    gps.stop();
+    openSession(r.id);
+  } catch (e) { showMsg("sMsg", e.message); $("sBtn").disabled = false; }
+}
+
+/* ---------- session: QR + live list ---------- */
+async function openSession(id) {
+  curSession = id;
+  showView("vSession");
+  $("qrcode").innerHTML = "";
+  await refreshSession(true);
+  clearInterval(pollTimer); clearInterval(tickTimer);
+  pollTimer = setInterval(() => refreshSession(false), 8000);
+  tickTimer = setInterval(tick, 1000);
+}
+async function refreshSession(first) {
+  try {
+    const d = await api("/api/lecturer/sessions/" + curSession);
+    offset = d.now - Date.now();
+    expiresAt = Date.parse(d.session.expires_at);
+    if (first) {
+      $("qTitle").textContent = d.session.module_name + " - " + fmtDate(d.session.lecture_date);
+      $("qCode").textContent = d.session.qr_code;
+      new QRCode($("qrcode"), { text: d.session.qr_code, width: 260, height: 260 });
+    }
+    const present = d.records.filter((r) => r.attendance_status === "Present").length;
+    $("qPresent").textContent = present;
+    $("qAbsent").textContent = d.records.length - present;
+    $("qEnrolled").textContent = d.enrolled;
+    $("qBody").innerHTML = d.records.map((r) =>
+      `<tr><td>${esc(r.full_name)}</td><td>${esc(r.reg_number)}</td>
+       <td><span class="badge ${r.attendance_status === "Present" ? "p" : "a"}">${r.attendance_status}</span></td>
+       <td>${r.distance_m} m</td><td>${fmtTime(r.scan_time)}</td></tr>`).join("") ||
+      '<tr><td colspan="5" class="muted">Nobody scanned yet</td></tr>';
+    tick();
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+function tick() {
+  const left = expiresAt - (Date.now() + offset);
+  if (left > 0) {
+    const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+    $("qState").textContent = "Open - " + m + ":" + String(s).padStart(2, "0") + " left";
+    $("qState").style.color = "#166534";
+  } else {
+    $("qState").textContent = "Closed (1 hour finished)";
+    $("qState").style.color = "#991b1b";
+  }
+}
+function leaveSession() {
+  clearInterval(pollTimer); clearInterval(tickTimer);
+  openModule(curModule);
+}
+async function deleteSession() {
+  if (!confirm("Delete this session and all scans? You can start it again after.")) return;
+  try {
+    await api("/api/lecturer/sessions/" + curSession, "DELETE");
+    leaveSession();
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+
+/* ---------- PDF report ---------- */
+async function downloadPdf(moduleId) {
+  showMsg("topMsg", "Making the PDF...", "info");
+  try {
+    const r = await api("/api/lecturer/modules/" + moduleId + "/report");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+
+    // header: logo + university name + motto
+    if (r.university.logo_data) {
+      try {
+        const type = r.university.logo_data.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+        doc.addImage(r.university.logo_data, type, 14, 8, 24, 24);
+      } catch (e) {}
+    }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(17);
+    doc.text(r.university.name, W / 2, 16, { align: "center" });
+    if (r.university.motto) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(10);
+      doc.text('"' + r.university.motto + '"', W / 2, 22, { align: "center" });
+    }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+    doc.text("ATTENDANCE REPORT", W / 2, 31, { align: "center" });
+    doc.setDrawColor(15, 61, 145); doc.line(14, 35, W - 14, 35);
+
+    // info
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    const info = [
+      ["Module: " + r.module.name, "Lecturer: " + r.lecturer],
+      ["Course: " + r.course.name + " (" + r.course.code + ")", "Period: " + fmtDate(r.module.start_date) + " - " + fmtDate(r.module.end_date)],
+      ["Students: " + r.total_students + "     Lectures held: " + r.held + " of " + r.planned, "Overall attendance: " + r.overall_percent + "%"],
+    ];
+    info.forEach((row, i) => { doc.text(row[0], 14, 42 + i * 6); doc.text(row[1], W / 2 + 10, 42 + i * 6); });
+
+    // table
+    const shortDate = (d) => d.slice(8, 10) + "/" + d.slice(5, 7);
+    const head = [["#", "Reg. number", "Student name", ...r.dates.map((d) => shortDate(d.date)), "Present", "%"]];
+    const body = r.students.map((s, i) => [i + 1, s.reg_number, s.full_name, ...s.marks, s.present + "/" + r.held, s.percent + "%"]);
+    const foot = [["", "", "Attendance % per lecture", ...r.dates.map((d) => d.percent + "%"), "", r.overall_percent + "%"]];
+    doc.autoTable({
+      head, body, foot, startY: 62, theme: "grid", showFoot: "lastPage",
+      styles: { fontSize: 7.5, cellPadding: 1.2, halign: "center" },
+      headStyles: { fillColor: [15, 61, 145] },
+      footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold" },
+      columnStyles: { 1: { halign: "left" }, 2: { halign: "left", cellWidth: 48 } },
+      didParseCell: (h) => {
+        if (h.section === "body" && h.column.index >= 3 && h.column.index < 3 + r.dates.length) {
+          if (h.cell.raw === "A") { h.cell.styles.textColor = [185, 28, 28]; h.cell.styles.fontStyle = "bold"; }
+          if (h.cell.raw === "P") h.cell.styles.textColor = [21, 128, 61];
+        }
+      },
+    });
+    if (!r.held) {
+      doc.setFontSize(10);
+      doc.text("No attendance session has been held yet for this module.", 14, doc.lastAutoTable.finalY + 8);
+    }
+
+    // footer on every page
+    const pages = doc.internal.getNumberOfPages();
+    const H = doc.internal.pageSize.getHeight();
+    for (let p = 1; p <= pages; p++) {
+      doc.setPage(p); doc.setFontSize(8); doc.setFont("helvetica", "normal");
+      doc.text("Generated by Smart Attendance on " + new Date().toLocaleString("en-GB"), 14, H - 6);
+      doc.text("Page " + p + " of " + pages, W - 14, H - 6, { align: "right" });
+    }
+    const safe = r.module.name.replace(/[^a-z0-9]+/gi, "_");
+    doc.save("Attendance_" + safe + "_" + new Date().toISOString().slice(0, 10) + ".pdf");
+    showMsg("topMsg", "PDF downloaded.", "ok");
+  } catch (e) { showMsg("topMsg", e.message); }
+}
+</script>
+</body>
+</html>
