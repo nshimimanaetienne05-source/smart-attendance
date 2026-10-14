@@ -1,0 +1,16 @@
+{
+  "name": "smart-attendance",
+  "main": "src/index.js",
+  "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "smart-attendance-db",
+      "database_id": "PASTE_YOUR_DATABASE_ID_HERE"
+    }
+  ]
+}
